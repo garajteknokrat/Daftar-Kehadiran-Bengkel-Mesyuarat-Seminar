@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="ms">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Daftar Kehadiran</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="kiosk" id="pickerView" style="display:none">
+  <div class="kiosk-head">
+    <p class="eyebrow">Sistem Kehadiran · KVBP</p>
+    <h1>Pilih Kursus</h1>
+  </div>
+  <div class="kursus-picker" id="pickerList"></div>
+</div>
+
+<div class="kiosk" id="checkinView" style="display:none">
+  <div class="kiosk-head">
+    <p class="eyebrow" id="tarikhKursus"></p>
+    <h1 id="namaKursus"></h1>
+  </div>
+  <div class="kiosk-count">Kehadiran: <b id="countHadir">0</b> / <span id="countTotal">0</span> peserta</div>
+  <div class="search-box">
+    <input type="text" id="cari" placeholder="Taip nama anda..." autofocus>
+  </div>
+  <div class="result-list" id="resultList"></div>
+</div>
+
+<div class="stamp-overlay" id="stampOverlay">
+  <div class="stamp-card">
+    <div class="mark">✓ HADIR</div>
+    <div class="who" id="stampNama"></div>
+    <div class="when" id="stampMasa"></div>
+  </div>
+</div>
+
+<script src="app.js"></script>
+<script>
+let pesertaCache = [];
+const id = qs("id");
+
+async function loadPicker(){
+  document.getElementById("pickerView").style.display = "block";
+  const res = await apiGet("listKursus");
+  const aktif = (res.kursus || []).filter(k => k.status === "Aktif");
+  const wrap = document.getElementById("pickerList");
+  if (!aktif.length){
+    wrap.innerHTML = `<p style="text-align:center; color:var(--ink-soft)">Tiada kursus aktif buat masa ini.</p>`;
+    return;
+  }
+  wrap.innerHTML = aktif.map(k => `
+    <div class="pick-item" data-id="${k.id}">
+      <h3>${escapeHtml(k.nama)}</h3>
+      <div class="meta">${escapeHtml(k.tarikh)} ${k.masa ? "· " + escapeHtml(k.masa) : ""} ${k.lokasi ? "· " + escapeHtml(k.lokasi) : ""}</div>
+    </div>`).join("");
+  wrap.querySelectorAll("[data-id]").forEach(el => {
+    el.onclick = () => { window.location.href = "checkin.html?id=" + el.dataset.id; };
+  });
+}
+
+async function loadCheckin(){
+  document.getElementById("checkinView").style.display = "block";
+  const res = await apiGet("getKursus", { id });
+  if (res.error){ showToast(res.error); return; }
+  document.getElementById("namaKursus").textContent = res.kursus.nama;
+  document.getElementById("tarikhKursus").textContent =
+    [res.kursus.tarikh, res.kursus.masa, res.kursus.lokasi].filter(Boolean).join(" · ");
+  pesertaCache = res.peserta || [];
+  renderCount();
+  renderList(pesertaCache);
+}
+
+function renderCount(){
+  document.getElementById("countTotal").textContent = pesertaCache.length;
+  document.getElementById("countHadir").textContent = pesertaCache.filter(p => p.hadir).length;
+}
+
+function renderList(list){
+  const wrap = document.getElementById("resultList");
+  if (!list.length){
+    wrap.innerHTML = `<p style="text-align:center; color:var(--ink-soft); padding:20px 0;">Tiada nama sepadan. Sila hubungi urus setia.</p>`;
+    return;
+  }
+  wrap.innerHTML = list.slice(0, 30).map(p => `
+    <div class="result-item ${p.hadir ? "done" : ""}" data-id="${p.id}">
+      <div>
+        <div class="name">${escapeHtml(p.nama)}</div>
+        ${p.jabatan ? `<div class="sub">${escapeHtml(p.jabatan)}</div>` : ""}
+      </div>
+      <div>${p.hadir ? '<span class="tag hadir">✓ Sudah Daftar</span>' : '<span class="tag belum">Tap untuk daftar</span>'}</div>
+    </div>`).join("");
+}
+
+document.getElementById("resultList").addEventListener("click", async (e) => {
+  const item = e.target.closest(".result-item");
+  if (!item || item.classList.contains("done")) return;
+  const pid = item.dataset.id;
+  const p = pesertaCache.find(x => x.id === pid);
+  const res = await apiPost("markKehadiran", { pesertaId: pid });
+  if (res.error){ showToast(res.error); return; }
+  p.hadir = true;
+  p.masaHadir = res.masa;
+  renderCount();
+  document.getElementById("cari").value = "";
+  renderList(pesertaCache);
+  document.getElementById("stampNama").textContent = res.nama || p.nama;
+  document.getElementById("stampMasa").textContent = res.masa;
+  const overlay = document.getElementById("stampOverlay");
+  overlay.classList.add("show");
+  setTimeout(() => overlay.classList.remove("show"), 1400);
+  document.getElementById("cari").focus();
+});
+
+document.getElementById("cari")?.addEventListener("input", (e) => {
+  const q = e.target.value.trim().toLowerCase();
+  renderList(q ? pesertaCache.filter(p => p.nama.toLowerCase().includes(q)) : pesertaCache);
+});
+
+if (id) { loadCheckin(); } else { loadPicker(); }
+</script>
+</body>
+</html>
