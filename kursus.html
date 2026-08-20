@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="ms">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Urus Kursus</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="wrap">
+
+  <div class="masthead">
+    <div class="masthead-left">
+      <div class="brand-mark">UPKV</div>
+      <div>
+        <a class="back" href="index.html">← Kembali ke Papan Kursus</a>
+        <h1 id="namaKursus">Memuatkan...</h1>
+        <p class="sub" id="metaKursus"></p>
+      </div>
+    </div>
+    <div class="actions" style="display:flex; gap:8px;">
+      <a class="btn ghost" id="linkCheckin" href="#" target="_blank">Buka Daftar Kehadiran ↗</a>
+      <button class="btn ghost" id="btnExport">Eksport CSV</button>
+    </div>
+  </div>
+
+  <div class="stat-strip">
+    <div class="stat"><span class="num" id="statTotal">0</span><span class="lbl">Jumlah Peserta</span></div>
+    <div class="stat"><span class="num" id="statHadir">0</span><span class="lbl">Sudah Hadir</span></div>
+    <div class="stat"><span class="num" id="statBelum">0</span><span class="lbl">Belum Hadir</span></div>
+  </div>
+
+  <div class="card">
+    <h3 style="font-family:'Special Elite',monospace; margin-top:0;">Tambah Peserta</h3>
+    <form id="formTambah">
+      <div class="field">
+        <textarea name="senaraiPeserta" placeholder="Satu peserta satu baris:
+Ahmad bin Ali, 900101-01-1234, Teknologi Automotif
+Siti Aminah, STAFF-221, Teknologi Elektronik" required></textarea>
+        <p class="hint">Format: Nama, No. KP/Staff ID (pilihan), Jabatan (pilihan)</p>
+      </div>
+      <button class="btn sm" type="submit">Tambah ke Senarai</button>
+    </form>
+  </div>
+
+  <div class="toolbar">
+    <h3 style="font-family:'Special Elite',monospace; margin:0;">Senarai Peserta</h3>
+    <input type="text" id="cari" placeholder="Cari nama..." style="padding:8px 12px; border:1px solid var(--line-strong); border-radius:8px; font-size:13.5px; width:220px;">
+  </div>
+
+  <table class="peserta-table">
+    <thead>
+      <tr><th>Nama</th><th>No. KP / Staff ID</th><th>Jabatan</th><th>Status</th><th>Masa Hadir</th><th></th></tr>
+    </thead>
+    <tbody id="tbody"></tbody>
+  </table>
+
+</div>
+
+<script src="app.js"></script>
+<script>
+const id = qs("id");
+let pesertaCache = [];
+
+async function load(){
+  const res = await apiGet("getKursus", { id });
+  if (res.error){ showToast(res.error); return; }
+  const k = res.kursus;
+  document.title = k.nama + " — Kehadiran";
+  document.getElementById("namaKursus").textContent = k.nama;
+  document.getElementById("metaKursus").textContent =
+    [k.tarikh, k.masa, k.lokasi, k.anjuran].filter(Boolean).join(" · ");
+  document.getElementById("linkCheckin").href = "checkin.html?id=" + id;
+  pesertaCache = res.peserta || [];
+  renderStats();
+  renderTable(pesertaCache);
+}
+
+function renderStats(){
+  const total = pesertaCache.length;
+  const hadir = pesertaCache.filter(p => p.hadir).length;
+  document.getElementById("statTotal").textContent = total;
+  document.getElementById("statHadir").textContent = hadir;
+  document.getElementById("statBelum").textContent = total - hadir;
+}
+
+function renderTable(list){
+  const tbody = document.getElementById("tbody");
+  if (!list.length){
+    tbody.innerHTML = `<tr><td colspan="6" style="text-align:center; color:var(--ink-soft); padding:24px;">Belum ada peserta didaftarkan.</td></tr>`;
+    return;
+  }
+  tbody.innerHTML = list.map(p => `
+    <tr>
+      <td><b>${escapeHtml(p.nama)}</b></td>
+      <td>${escapeHtml(p.noKp) || "—"}</td>
+      <td>${escapeHtml(p.jabatan) || "—"}</td>
+      <td>${p.hadir ? '<span class="tag hadir">✓ Hadir</span>' : '<span class="tag belum">Belum Hadir</span>'}</td>
+      <td>${p.masaHadir ? escapeHtml(p.masaHadir) : "—"}</td>
+      <td><button class="btn sm ghost" data-toggle="${p.id}">${p.hadir ? "Batal Tanda" : "Tanda Hadir"}</button></td>
+    </tr>`).join("");
+}
+
+document.getElementById("tbody").addEventListener("click", async (e) => {
+  const btn = e.target.closest("[data-toggle]");
+  if (!btn) return;
+  const pid = btn.dataset.toggle;
+  const p = pesertaCache.find(x => x.id === pid);
+  btn.disabled = true;
+  const action = p.hadir ? "unmarkKehadiran" : "markKehadiran";
+  const res = await apiPost(action, { pesertaId: pid });
+  if (res.error){ showToast(res.error); btn.disabled = false; return; }
+  showToast(p.hadir ? "Ditanda semula sebagai belum hadir" : "Ditanda hadir");
+  load();
+});
+
+document.getElementById("cari").addEventListener("input", (e) => {
+  const q = e.target.value.trim().toLowerCase();
+  renderTable(pesertaCache.filter(p => p.nama.toLowerCase().includes(q)));
+});
+
+document.getElementById("formTambah").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const senaraiPeserta = new FormData(e.target).get("senaraiPeserta");
+  const res = await apiPost("addPeserta", { kursusId: id, senaraiPeserta });
+  if (res.error){ showToast(res.error); return; }
+  showToast(res.jumlah + " peserta ditambah");
+  e.target.reset();
+  load();
+});
+
+document.getElementById("btnExport").addEventListener("click", () => {
+  const rows = [["Nama", "No. KP / Staff ID", "Jabatan", "Status", "Masa Hadir"]];
+  pesertaCache.forEach(p => rows.push([p.nama, p.noKp, p.jabatan, p.hadir ? "Hadir" : "Belum Hadir", p.masaHadir || ""]));
+  csvDownload("kehadiran-" + id + ".csv", rows);
+});
+
+if (!id){
+  document.getElementById("namaKursus").textContent = "ID kursus tiada";
+} else {
+  load();
+}
+</script>
+</body>
+</html>
