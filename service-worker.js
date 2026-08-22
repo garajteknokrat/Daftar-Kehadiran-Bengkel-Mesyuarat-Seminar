@@ -1,4 +1,4 @@
-const CACHE_NAME = "kehadiran-upkv-v1";
+const CACHE_NAME = "kehadiran-upkv-v2";
 const SHELL_FILES = [
   "index.html",
   "kursus.html",
@@ -27,10 +27,27 @@ self.addEventListener("activate", (event) => {
   self.clients.claim();
 });
 
-// Network-first untuk data API (Apps Script), cache-first untuk fail statik.
+// HTML/halaman: NETWORK-FIRST — sentiasa cuba dapatkan versi terkini dari
+// server dahulu (supaya sebarang update kod terus nampak), cache cuma
+// fallback bila offline. Fail statik (gambar, manifest): cache-first
+// seperti biasa untuk laju & jimat data.
 self.addEventListener("fetch", (event) => {
   const url = event.request.url;
   if (url.includes("script.google.com")) return; // jangan cache data live
+
+  const isHtmlPage = event.request.mode === "navigate" || event.request.destination === "document";
+  if (isHtmlPage) {
+    event.respondWith(
+      fetch(event.request)
+        .then((res) => {
+          caches.open(CACHE_NAME).then((cache) => cache.put(event.request, res.clone()));
+          return res;
+        })
+        .catch(() => caches.match(event.request))
+    );
+    return;
+  }
+
   event.respondWith(
     caches.match(event.request).then((cached) => cached || fetch(event.request))
   );
