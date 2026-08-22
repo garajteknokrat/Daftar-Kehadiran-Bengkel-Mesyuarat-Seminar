@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="ms">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Daftar Kehadiran Kursus</title>
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#20283D">
+<link rel="icon" href="assets/icon-192.png">
+<link rel="apple-touch-icon" href="assets/icon-192.png">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="wrap">
+
+  <div class="masthead">
+    <div class="masthead-left">
+      <div class="brand-mark">UPKV</div>
+      <div>
+        <p class="eyebrow">Sistem Kehadiran Perbengkelan / Mesyuarat UPKV BPLTV</p>
+        <h1>Papan Kursus</h1>
+        <p class="sub">Urus kursus, senarai peserta &amp; rekod kehadiran</p>
+      </div>
+    </div>
+    <button class="btn" id="btnBaru">+ Kursus Baru</button>
+  </div>
+
+  <div id="kursusGrid" class="kursus-grid"></div>
+  <div id="emptyState" class="empty-state" style="display:none">
+    <div class="stamp-mark">BELUM ADA KURSUS</div>
+    <p>Mulakan dengan menambah kursus pertama anda.</p>
+  </div>
+
+</div>
+
+<!-- Modal: Kursus Baru -->
+<dialog id="modalBaru">
+  <form id="formBaru">
+    <div class="modal-head">
+      <h2>Kursus Baru</h2>
+      <button type="button" class="modal-close" id="btnTutup">&times;</button>
+    </div>
+    <div class="modal-body">
+      <div class="field">
+        <label>Nama Kursus</label>
+        <input type="text" name="nama" required placeholder="cth: Bengkel Kenderaan Elektrik Siri 3">
+      </div>
+      <div class="row-2">
+        <div class="field">
+          <label>Tarikh Mula</label>
+          <input type="date" name="tarikhMula" required>
+        </div>
+        <div class="field">
+          <label>Tarikh Tamat <span style="text-transform:none; font-weight:400;">(jika berbeza)</span></label>
+          <input type="date" name="tarikhTamat">
+        </div>
+      </div>
+      <div class="row-2">
+        <div class="field">
+          <label>Masa</label>
+          <input type="text" name="masa" placeholder="cth: 8:30 AM - 1:00 PM">
+        </div>
+        <div class="field">
+          <label>Lokasi</label>
+          <input type="text" name="lokasi" placeholder="cth: Bengkel Automotif A">
+        </div>
+      </div>
+      <div class="field">
+        <label>Anjuran</label>
+        <input type="text" name="anjuran" placeholder="cth: BPLTV / Jabatan Teknologi Automotif">
+      </div>
+      <div class="field">
+        <label>Kawasan Kehadiran GPS <span style="text-transform:none; font-weight:400;">(pilihan — anti-tipu lokasi)</span></label>
+        <div class="row-2" style="margin-bottom:10px;">
+          <input type="text" name="lat" id="fldLat" placeholder="Latitud" readonly>
+          <input type="text" name="lon" id="fldLon" placeholder="Longitud" readonly>
+        </div>
+        <div class="row-2">
+          <button type="button" class="btn sm ghost" id="btnGpsSini">📍 Guna Lokasi Semasa</button>
+          <input type="number" name="radius" id="fldRadius" placeholder="Radius (meter, lalai 100)" min="10">
+        </div>
+        <p class="hint" id="gpsHint">Kosongkan kalau tak perlu had lokasi. Kalau diisi, berdiri di lokasi program semasa cipta kursus, klik "Guna Lokasi Semasa" — peserta wajib berada dalam radius ni untuk sahkan kehadiran.</p>
+      </div>
+      <div class="field">
+        <label>Kod Kehadiran <span style="text-transform:none; font-weight:400;">(pilihan — cegah kawan tap bagi pihak)</span></label>
+        <div class="row-2">
+          <input type="text" name="kod" id="fldKod" placeholder="Kosong = tiada kod diperlukan" maxlength="8">
+          <button type="button" class="btn sm ghost" id="btnJanaKod">🎲 Jana Kod</button>
+        </div>
+        <p class="hint">Kalau diisi, peserta WAJIB masukkan kod ni untuk sahkan kehadiran. Kod TIDAK dipaparkan automatik pada peserta — sebut/tayang kod ni sendiri di lokasi program (papan putih/projektor) supaya cuma orang yang hadir fizikal tahu kod tu.</p>
+      </div>
+      <div class="field">
+        <label>Senarai Peserta (pilihan — boleh tambah kemudian)</label>
+        <textarea name="senaraiPeserta" placeholder="Satu peserta satu baris — nama sahaja pun cukup:
+Ahmad bin Ali
+Siti Aminah, , Teknologi Elektronik" required></textarea>
+        <p class="hint">Format: Nama, No. KP (tak perlu diisi), Jabatan (pilihan). No. KP akan disimpan automatik bila peserta sahkan kehadiran sendiri di kiosk.</p>
+      </div>
+    </div>
+    <div class="modal-foot">
+      <button type="button" class="btn ghost" id="btnBatal">Batal</button>
+      <button type="submit" class="btn" id="btnSimpan">Simpan Kursus</button>
+    </div>
+  </form>
+</dialog>
+
+<script src="app.js"></script>
+<script>
+const modal = document.getElementById("modalBaru");
+document.getElementById("btnBaru").onclick = () => modal.showModal();
+document.getElementById("btnTutup").onclick = () => modal.close();
+document.getElementById("btnBatal").onclick = () => modal.close();
+
+function statTag(status){
+  return status === "Tamat" ? '<span class="status-tag tamat">Tamat</span>' : '<span class="status-tag">Aktif</span>';
+}
+
+function renderKursus(list){
+  const grid = document.getElementById("kursusGrid");
+  const empty = document.getElementById("emptyState");
+  if (!list.length){
+    grid.innerHTML = "";
+    empty.style.display = "block";
+    return;
+  }
+  empty.style.display = "none";
+  grid.innerHTML = list.map(k => {
+    const pct = k.jumlahPeserta ? Math.round((k.jumlahHadir / k.jumlahPeserta) * 100) : 0;
+    return `
+    <div class="card kursus-card ${k.status === "Tamat" ? "tamat" : ""}">
+      ${statTag(k.status)}
+      <h3>${escapeHtml(k.nama)}</h3>
+      <div class="meta">
+        <div>📅 <b>${escapeHtml(k.tarikh)}</b> ${k.masa ? "· " + escapeHtml(k.masa) : ""}</div>
+        ${k.lokasi ? `<div>📍 ${escapeHtml(k.lokasi)}</div>` : ""}
+        ${k.anjuran ? `<div>🏷️ ${escapeHtml(k.anjuran)}</div>` : ""}
+      </div>
+      <div class="progress-row">
+        <div class="progress-track"><div class="progress-fill" style="width:${pct}%"></div></div>
+        <span class="progress-num">${k.jumlahHadir}/${k.jumlahPeserta}</span>
+      </div>
+      <div class="actions">
+        <a class="btn sm" href="kursus.html?id=${k.id}">Urus Peserta</a>
+        <a class="btn sm ghost" href="checkin.html?id=${k.id}" target="_blank">Buka Daftar Kehadiran ↗</a>
+        <button type="button" class="btn sm danger" data-delete="${k.id}" data-nama="${escapeHtml(k.nama)}" style="margin-left:auto;">🗑️ Padam</button>
+      </div>
+    </div>`;
+  }).join("");
+}
+
+document.getElementById("kursusGrid").addEventListener("click", async (e) => {
+  const btn = e.target.closest("[data-delete]");
+  if (!btn) return;
+  const id = btn.dataset.delete;
+  const nama = btn.dataset.nama;
+  if (!confirm(`Padam kursus "${nama}"?\n\nIni akan padam SEMUA rekod peserta & kehadiran kursus ni sekali. Tindakan ini TIDAK boleh dibatalkan.`)) return;
+  btn.disabled = true; btn.textContent = "Memadam...";
+  const res = await apiPost("deleteKursus", { id });
+  if (res.error){ showToast(res.error); btn.disabled = false; btn.textContent = "🗑️ Padam"; return; }
+  showToast("Kursus dipadam");
+  load();
+});
+
+async function load(){
+  const res = await apiGet("listKursus");
+  if (res.error){ showToast(res.error); return; }
+  renderKursus(res.kursus || []);
+}
+
+document.getElementById("btnJanaKod").addEventListener("click", () => {
+  const kod = String(Math.floor(1000 + Math.random() * 9000));
+  document.getElementById("fldKod").value = kod;
+});
+
+document.getElementById("btnGpsSini").addEventListener("click", async () => {
+  const btn = document.getElementById("btnGpsSini");
+  const hint = document.getElementById("gpsHint");
+  btn.disabled = true; btn.textContent = "📍 Mengesan lokasi...";
+  try {
+    const pos = await getCurrentPositionAsync();
+    document.getElementById("fldLat").value = pos.coords.latitude.toFixed(6);
+    document.getElementById("fldLon").value = pos.coords.longitude.toFixed(6);
+    if (!document.getElementById("fldRadius").value) document.getElementById("fldRadius").value = 100;
+    hint.textContent = "Lokasi semasa berjaya diambil (ketepatan ~" + Math.round(pos.coords.accuracy) + "m). Peserta wajib berada dalam radius ni untuk sahkan kehadiran.";
+  } catch (err) {
+    hint.textContent = "Gagal dapatkan lokasi — pastikan anda benarkan akses GPS pada pelayar. (" + err.message + ")";
+  }
+  btn.disabled = false; btn.textContent = "📍 Guna Lokasi Semasa";
+});
+
+document.getElementById("formBaru").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const fd = new FormData(e.target);
+  const payload = Object.fromEntries(fd.entries());
+  const btn = document.getElementById("btnSimpan");
+  btn.disabled = true; btn.textContent = "Menyimpan...";
+  const res = await apiPost("createKursus", payload);
+  btn.disabled = false; btn.textContent = "Simpan Kursus";
+  if (res.error){ showToast(res.error); return; }
+  modal.close();
+  e.target.reset();
+  showToast("Kursus berjaya dicipta");
+  load();
+});
+
+load();
+registerServiceWorker();
+</script>
+</body>
+</html>
